@@ -1,0 +1,398 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    line-height: 1.6;
+}
+
+.container {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 20px;
+}
+
+/* Header */
+.header {
+    background: #252526;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #3e3e42;
+    text-align: center;
+}
+
+.header h1 {
+    color: #4ec9b0;
+    font-size: 28px;
+}
+
+/* AI Chat Section */
+.ai-chat {
+    background: #252526;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #3e3e42;
+    max-height: 300px;
+    display: flex;
+    flex-direction: column;
+}
+
+.ai-chat h2 {
+    margin-bottom: 15px;
+    color: #569cd6;
+    font-size: 18px;
+}
+
+.chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 15px;
+    padding: 10px;
+    background: #1e1e1e;
+    border-radius: 4px;
+    border: 1px solid #3e3e42;
+}
+
+.message {
+    margin-bottom: 12px;
+    padding: 10px;
+    border-radius: 6px;
+    line-height: 1.5;
+}
+
+.user-message {
+    background: #0e639c;
+    margin-left: 20px;
+}
+
+.ai-message {
+    background: #2d2d30;
+    margin-right: 20px;
+}
+
+.chat-input-container {
+    display: flex;
+    gap: 10px;
+}
+
+.chat-input {
+    flex: 1;
+    padding: 10px;
+    background: #3c3c3c;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    color: #d4d4d4;
+    font-size: 14px;
+}
+
+.chat-input:focus {
+    outline: none;
+    border-color: #007acc;
+}
+
+/* Main Content: Request/Response Panels */
+.main-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.panel {
+    background: #252526;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #3e3e42;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel h2 {
+    margin-bottom: 15px;
+    color: #569cd6;
+    font-size: 18px;
+}
+
+.editor {
+    flex: 1;
+    min-height: 300px;
+    padding: 12px;
+    background: #1e1e1e;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    color: #d4d4d4;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    resize: vertical;
+    line-height: 1.5;
+}
+
+.editor:focus {
+    outline: none;
+    border-color: #007acc;
+}
+
+.editor::placeholder {
+    color: #6a6a6a;
+}
+
+/* Payload Controls */
+.payload-controls {
+    margin: 15px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.payload-controls label {
+    color: #cccccc;
+    font-weight: 500;
+}
+
+.payload-select {
+    flex: 1;
+    padding: 8px;
+    background: #3c3c3c;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    color: #d4d4d4;
+    font-size: 14px;
+}
+
+.payload-select:focus {
+    outline: none;
+    border-color: #007acc;
+}
+
+/* Buttons */
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.btn-primary {
+    background: #0e639c;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #1177bb;
+}
+
+.btn-send {
+    background: #16825d;
+    color: white;
+    width: 100%;
+}
+
+.btn-send:hover {
+    background: #1a9970;
+}
+
+.btn-analyze {
+    background: #0e639c;
+    color: white;
+    width: 100%;
+}
+
+.btn-analyze:hover {
+    background: #1177bb;
+}
+
+/* Analysis Result */
+.analysis-result {
+    margin: 15px 0;
+    padding: 15px;
+    background: #2d2d30;
+    border-radius: 6px;
+    border: 1px solid #3e3e42;
+}
+
+.analysis-result.hidden {
+    display: none;
+}
+
+.verdict-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.verdict-badge.success {
+    color: #4ec9b0;
+}
+
+.verdict-badge.failure {
+    color: #f48771;
+}
+
+.verdict-badge.suspicious {
+    color: #dcdcaa;
+}
+
+.confidence {
+    margin-bottom: 10px;
+    color: #cccccc;
+    font-size: 14px;
+}
+
+.evidence {
+    margin-top: 10px;
+}
+
+.evidence ul {
+    margin-left: 20px;
+    margin-top: 5px;
+}
+
+.evidence li {
+    color: #d4d4d4;
+    margin-bottom: 5px;
+}
+
+/* History Section */
+.history-section {
+    background: #252526;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #3e3e42;
+}
+
+.history-section h2 {
+    margin-bottom: 15px;
+    color: #569cd6;
+    font-size: 18px;
+}
+
+.table-container {
+    overflow-x: auto;
+}
+
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: #1e1e1e;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.history-table thead {
+    background: #2d2d30;
+}
+
+.history-table th {
+    padding: 12px;
+    text-align: left;
+    color: #cccccc;
+    font-weight: 600;
+    border-bottom: 1px solid #3e3e42;
+}
+
+.history-table td {
+    padding: 12px;
+    border-bottom: 1px solid #3e3e42;
+}
+
+.history-table tbody tr:hover {
+    background: #2d2d30;
+    cursor: pointer;
+}
+
+.history-table tbody tr.empty-state:hover {
+    background: transparent;
+    cursor: default;
+}
+
+.empty-state td {
+    text-align: center;
+    color: #6a6a6a;
+    font-style: italic;
+    padding: 30px;
+}
+
+/* Status Badges */
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.status-success {
+    background: rgba(78, 201, 176, 0.2);
+    color: #4ec9b0;
+}
+
+.status-failure {
+    background: rgba(244, 135, 113, 0.2);
+    color: #f48771;
+}
+
+.status-suspicious {
+    background: rgba(220, 220, 170, 0.2);
+    color: #dcdcaa;
+}
+
+/* Action Buttons in History */
+.action-btn {
+    padding: 4px 8px;
+    background: #0e639c;
+    color: white;
+    border: none;
+    border-radius: 3px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.action-btn:hover {
+    background: #1177bb;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1e1e1e;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #3e3e42;
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #4e4e52;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .main-content {
+        grid-template-columns: 1fr;
+    }
+}

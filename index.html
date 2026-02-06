@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI HTTP Tester</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🔐 AI HTTP Tester</h1>
+        </header>
+
+        <!-- AI Chat Section -->
+        <section class="ai-chat">
+            <h2>💬 AI Chat</h2>
+            <div class="chat-messages" id="chatMessages">
+                abc
+                <div class="message ai-message">
+                    <strong>AI:</strong> Hello! Paste an HTTP request below and ask me to test for vulnerabilities.
+                </div>
+            </div>
+            <div class="chat-input-container">
+                <input 
+                    type="text" 
+                    id="chatInput" 
+                    placeholder="Type prompt... (e.g., 'find injection points' or 'give me SQLi payloads')" 
+                    class="chat-input"
+                />
+                <button id="askAiBtn" class="btn btn-primary">Ask AI</button>
+            </div>
+        </section>
+
+        <!-- Main Content: Request and Response Panels -->
+        <div class="main-content">
+            <!-- Request Panel -->
+            <section class="panel request-panel">
+                <h2>📝 REQUEST</h2>
+                <textarea 
+                    id="requestEditor" 
+                    class="editor" 
+                    placeholder="Paste your raw HTTP request here...
+
+Example:
+POST /api/download HTTP/1.1
+Host: example.com
+Cookie: session=abc123
+Content-Type: application/json
+
+{&quot;filename&quot;: &quot;report.pdf&quot;}"
+                ></textarea>
+                
+                <div class="payload-controls">
+                    <label for="payloadSelect">Payload:</label>
+                    <select id="payloadSelect" class="payload-select">
+                        <option value="">No payload selected</option>
+                    </select>
+                </div>
+
+                <button id="sendRequestBtn" class="btn btn-send">🚀 Send Request</button>
+            </section>
+
+            <!-- Response Panel -->
+            <section class="panel response-panel">
+                <h2>📨 RESPONSE</h2>
+                <textarea 
+                    id="responseEditor" 
+                    class="editor" 
+                    placeholder="Response will appear here..."
+                    readonly
+                ></textarea>
+
+                <div id="analysisResult" class="analysis-result hidden">
+                    <div class="verdict-badge" id="verdictBadge">
+                        <span id="verdictIcon"></span>
+                        <span id="verdictText"></span>
+                    </div>
+                    <div class="confidence">
+                        Confidence: <span id="confidenceLevel">-</span>
+                    </div>
+                    <div class="evidence">
+                        <strong>Evidence:</strong>
+                        <ul id="evidenceList"></ul>
+                    </div>
+                </div>  
+
+                <button id="analyzeBtn" class="btn btn-analyze">🔍 Analyze Response</button>
+            </section>
+        </div>
+
+        <!-- History Table -->
+        <section class="history-section">
+            <h2>📊 HISTORY</h2>
+            <div class="table-container">
+                <table class="history-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Payload</th>
+                            <th>Status</th>
+                            <th>Size</th>
+                            <th>Verdict</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                        <tr class="empty-state">
+                            <td colspan="6">No tests run yet. Start by sending a request!</td>
+                        </tr>   
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
