@@ -17,7 +17,6 @@
         <section class="ai-chat">
             <h2>💬 AI Chat</h2>
             <div class="chat-messages" id="chatMessages">
-                abc
                 <div class="message ai-message">
                     <strong>AI:</strong> Hello! Paste an HTTP request below and ask me to test for vulnerabilities.
                 </div>
@@ -52,6 +51,13 @@ Content-Type: application/json
 {&quot;filename&quot;: &quot;report.pdf&quot;}"
                 ></textarea>
                 
+                <div class="payload-controls">
+                    <label for="injectionPointSelect">Target:</label>
+                    <select id="injectionPointSelect" class="payload-select">
+                        <option value="">Auto (first parameter)</option>
+                    </select>
+                </div>
+
                 <div class="payload-controls">
                     <label for="payloadSelect">Payload:</label>
                     <select id="payloadSelect" class="payload-select">
@@ -92,7 +98,13 @@ Content-Type: application/json
 
         <!-- History Table -->
         <section class="history-section">
-            <h2>📊 HISTORY</h2>
+            <div class="history-header">
+                <h2>📊 HISTORY</h2>
+                <div class="history-actions">
+                    <button id="exportHistoryBtn" class="btn btn-secondary">💾 Export</button>
+                    <button id="clearHistoryBtn" class="btn btn-danger">🗑️ Clear</button>
+                </div>
+            </div>
             <div class="table-container">
                 <table class="history-table">
                     <thead>

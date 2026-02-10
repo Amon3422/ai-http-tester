@@ -281,10 +281,40 @@ body {
     border: 1px solid #3e3e42;
 }
 
-.history-section h2 {
+.history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 15px;
+}
+
+.history-header h2 {
+    margin: 0;
     color: #569cd6;
     font-size: 18px;
+}
+
+.history-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.btn-secondary {
+    background: #3e3e42;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #4e4e52;
+}
+
+.btn-danger {
+    background: #c5443c;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #d85450;
 }
 
 .table-container {
