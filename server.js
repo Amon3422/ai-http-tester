@@ -17,6 +17,11 @@ app.use(express.text({ limit: '10mb' }));
 // Serve static files (frontend)
 app.use(express.static(__dirname));
 
+// Serve index.html at root (important for Vercel)
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'AI HTTP Tester Backend Running' });
