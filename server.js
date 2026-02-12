@@ -115,6 +115,131 @@ app.post('/api/send-request', async (req, res) => {
     }
 });
 
+// Helper function to extract and clean JSON from AI responses
+function extractAndCleanJSON(text) {
+    // First try to extract from markdown blocks
+    const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/```\s*([\s\S]*?)```/);
+    let jsonString = jsonMatch ? jsonMatch[1].trim() : text.trim();
+    
+    // If no markdown blocks, try to find JSON object
+    if (!jsonMatch && !jsonString.startsWith('{')) {
+        // Try to find a JSON object in the text
+        const objectMatch = text.match(/\{[\s\S]*\}/);
+        if (objectMatch) {
+            jsonString = objectMatch[0];
+        }
+    }
+    
+    // Remove common AI prefixes like "json" or "```" that might slip through
+    jsonString = jsonString.replace(/^(json|```json?)\s*/i, '');
+    jsonString = jsonString.replace(/```\s*$/i, '');
+    
+    // Additional cleaning: remove any text before the first {
+    const firstBrace = jsonString.indexOf('{');
+    if (firstBrace > 0) {
+        console.log('[AI] Removing text before JSON object:', jsonString.substring(0, firstBrace));
+        jsonString = jsonString.substring(firstBrace);
+    }
+    
+    // Remove any text after the last }
+    const lastBrace = jsonString.lastIndexOf('}');
+    if (lastBrace !== -1 && lastBrace < jsonString.length - 1) {
+        console.log('[AI] Removing text after JSON object');
+        jsonString = jsonString.substring(0, lastBrace + 1);
+    }
+    
+    return jsonString.trim();
+}
+
+// Helper function to attempt JSON repair
+function attemptJSONRepair(jsonString, originalError) {
+    console.log('[AI] Attempting JSON repair...');
+    
+    let workingString = jsonString;
+    
+    // ALWAYS FIRST: Remove invalid \' escape sequences
+    // Single quotes don't need escaping in JSON strings (which use double quotes)
+    const hasInvalidEscapes = workingString.includes("\\'");
+    if (hasInvalidEscapes) {
+        console.log("[AI] Removing invalid \\' escape sequences...");
+        workingString = workingString.replace(/\\'/g, "'");
+        console.log('[AI] Cleaned up escape sequences');
+    }
+    
+    // Try parsing the cleaned version
+    try {
+        const parsed = JSON.parse(workingString);
+        console.log('[AI] ✓ Successfully parsed after cleanup');
+        return { 
+            success: true, 
+            data: parsed, 
+            warning: hasInvalidEscapes ? 'Response contained invalid escape sequences and was auto-repaired.' : undefined 
+        };
+    } catch (e) {
+        console.log('[AI] ✗ Still invalid after cleanup:', e.message);
+    }
+    
+    // Strategy 1: Fix truncated JSON by closing brackets/braces
+    if (workingString.includes('"payloads": [') || workingString.includes('"evidence": [')) {
+        console.log('[AI] Attempting to fix truncated JSON...');
+        const openBraces = (workingString.match(/{/g) || []).length;
+        const closeBraces = (workingString.match(/}/g) || []).length;
+        const openBrackets = (workingString.match(/\[/g) || []).length;
+        const closeBrackets = (workingString.match(/\]/g) || []).length;
+        
+        let repaired = workingString;
+        
+        // Close arrays
+        for (let i = 0; i < (openBrackets - closeBrackets); i++) {
+            repaired += ']';
+        }
+        // Close objects
+        for (let i = 0; i < (openBraces - closeBraces); i++) {
+            repaired += '}';
+        }
+        
+        try {
+            const parsed = JSON.parse(repaired);
+            console.log('[AI] ✓ Successfully repaired truncated JSON');
+            return { success: true, data: parsed, warning: 'Response was truncated but repaired. Some data may be incomplete.' };
+        } catch (e) {
+            console.log('[AI] ✗ Truncation repair failed:', e.message);
+        }
+    }
+    
+    // Strategy 2: Try to extract just the first complete JSON object
+    console.log('[AI] Attempting to extract first complete JSON object...');
+    try {
+        const firstBrace = workingString.indexOf('{');
+        if (firstBrace !== -1) {
+            let braceCount = 0;
+            let endIndex = -1;
+            
+            for (let i = firstBrace; i < workingString.length; i++) {
+                if (workingString[i] === '{') braceCount++;
+                if (workingString[i] === '}') braceCount--;
+                
+                if (braceCount === 0) {
+                    endIndex = i + 1;
+                    break;
+                }
+            }
+            
+            if (endIndex !== -1) {
+                const extracted = workingString.substring(firstBrace, endIndex);
+                const parsed = JSON.parse(extracted);
+                console.log('[AI] ✓ Successfully extracted complete JSON object');
+                return { success: true, data: parsed, warning: 'Extracted first complete JSON object from response.' };
+            }
+        }
+    } catch (e) {
+        console.log('[AI] ✗ JSON extraction failed:', e.message);
+    }
+    
+    // If all repairs fail, return null
+    return { success: false };
+}
+
 // AI Analysis endpoint
 app.post('/api/ai-analyze', async (req, res) => {
     try {
@@ -129,53 +254,109 @@ app.post('/api/ai-analyze', async (req, res) => {
 
         console.log(`[AI] Analyzing: ${prompt.substring(0, 50)}...`);
 
-        const systemPrompt = `You are a security testing assistant that helps identify vulnerabilities in HTTP requests.
+        const systemPrompt = `You are a Senior Security Engineer and Pentesting Assistant. Your goal is to provide actionable intelligence for security testing.
 
-IMPORTANT: Always respond with valid, complete JSON only. Do not truncate arrays or objects.
+⚠️ CRITICAL JSON FORMATTING RULES - READ CAREFULLY ⚠️
+
+JSON strings use DOUBLE QUOTES ("). Inside double-quoted strings:
+- Single quotes (') are REGULAR CHARACTERS - they need NO escaping
+- Double quotes (") MUST be escaped as \\"
+- Backslashes (\\) MUST be escaped as \\\\
+
+CORRECT WAY to write payloads in JSON:
+✓ "explanation": "The payload alert('XSS') was tested"
+✓ "explanation": "Found SQL: SELECT * FROM users WHERE id='1'"
+✓ "explanation": "The script tag <script>alert('test')</script> was blocked"
+✓ "explanation": "SQL code: OR '1'='1' was detected"
+
+WRONG - NEVER DO THIS:
+✗ "explanation": "The payload alert(\\'XSS\\') was tested"
+✗ "explanation": "Found SQL: SELECT * FROM users WHERE id=\\'1\\'"
+✗ "explanation": "The script tag <script>alert(\\'test\\')</script> was blocked"
+
+Rule: If you're writing text inside "..." in JSON, single quotes ' are just regular characters. DO NOT put backslash before them.
+
+When quoting SQL or XSS payloads containing single quotes:
+- ✓ CORRECT: "explanation": "The payload OR '1'='1' succeeded"
+- ✗ WRONG: "explanation": "The payload OR \\'1\\'=\\'1\\' succeeded"
+
+MANDATORY STRUCTURE:
+1. Respond with pure JSON only (no markdown, no code blocks)
+2. Use double quotes for all keys and string values
+3. Every response MUST include "explanation" field
+
+CRITICAL: Every response MUST include a detailed "explanation" field in English. This field should act as a "Security Consultant's Summary," explaining the logic behind your findings, why certain parameters were chosen, or how specific payloads reveal a vulnerability.
 
 When asked to find injection points:
-- Identify parameters that could be vulnerable (in JSON body, form-encoded body, query string, headers)
-- Recognize form-encoded data (application/x-www-form-urlencoded) like: searchFor=value&param=value
-- Recognize JSON data like: {"param": "value"}
-- Recognize URL query parameters like: ?param=value
-- Rate each by risk level (HIGH, MEDIUM, LOW)
-- Explain why each is vulnerable
-- Return ONLY this JSON structure:
+- Scan for vulnerable parameters in JSON/Form-encoded bodies, Query strings, and Headers.
+- Categorize and prioritize based on impact (HIGH/MEDIUM/LOW).
+- Return this JSON structure:
 {
+  "explanation": "A deep-dive summary into the request's attack surface. Explain why specific locations are prioritized and the potential impact of the identified vulnerabilities.",
   "injectionPoints": [
-    {"name": "paramName", "location": "Body (Form)/Body (JSON)/Header/Query", "risk": "HIGH/MEDIUM/LOW", "reason": "explanation"}
+    {"name": "paramName", "location": "Body (Form)/Body (JSON)/Header/Query", "risk": "HIGH/MEDIUM/LOW", "reason": "Detailed technical explanation"}
   ]
 }
 
 When asked to generate payloads:
-- Create 10-15 payloads for the specified vulnerability type
-- Include classic and advanced variations
-- Return ONLY this JSON structure:
+- Create EXACTLY 10-15 payloads ONLY. DO NOT generate more than 15 payloads.
+- Range from basic detection to advanced WAF-evasion techniques.
+- STOP at 15 payloads maximum. Quality over quantity.
+- Return this JSON structure:
 {
-  "payloads": ["payload1", "payload2", "payload3", ...]
+  "explanation": "Summarize the payload strategy. Explain the difference between the basic and advanced payloads provided and what specific filters they are designed to bypass.",
+  "payloads": ["payload1", "payload2", ... up to 15 maximum]
 }
 
-When asked to "test for [vulnerability]" (combined request):
-- First identify injection points
-- Then generate payloads for that vulnerability type
-- Return BOTH in this JSON structure:
+When asked to "test for [vulnerability]" (Combined Action):
+- Perform both discovery and weaponization in one pass.
+- Generate MAXIMUM 12-15 payloads ONLY. Do not exceed this limit.
+- Return this JSON structure:
 {
-  "injectionPoints": [{"name": "...", "location": "...", "risk": "...", "reason": "..."}],
-  "payloads": ["payload1", "payload2", ...]
+  "explanation": "A comprehensive testing roadmap. Summarize the target parameters and how the generated payloads should be interpreted based on the injection points.",
+  "injectionPoints": [...],
+  "payloads": [... maximum 15 items]
 }
 
 When asked to analyze responses:
-- Determine if the attack succeeded, failed, or is suspicious
-- Look for error messages, path disclosures, SQL errors, XSS reflections, etc.
-- Provide confidence percentage (0-100)
-- Return ONLY this JSON structure:
+CRITICAL ANALYSIS RULES - READ CAREFULLY:
+
+1. XSS Testing Analysis:
+   - SUCCESS: ONLY if the EXACT payload from the request appears UNESCAPED in the response HTML/body
+   - Check if payload like <script>alert('XSS')</script> appears literally in the response
+   - Do NOT count legitimate website <script> tags as reflection
+   - FAILURE: If payload is encoded (e.g., &lt;script&gt;), filtered, or not present at all
+   - Even with 200 OK status, if payload is NOT reflected = FAILURE
+
+2. SQL Injection Testing Analysis:
+   - SUCCESS: Database error messages (MySQL/MSSQL/PostgreSQL syntax errors, column names, table names)
+   - SUSPICIOUS: Significant response time delay (>5s), different response length/structure
+   - FAILURE: Normal response, no errors, no behavioral changes
+
+3. Path Traversal / LFI Testing Analysis:
+   - SUCCESS: File contents revealed (e.g., /etc/passwd, C:\\windows\\win.ini, source code)
+   - FAILURE: Error pages, access denied, or normal application response
+
+4. Authentication Bypass Testing Analysis:
+   - SUCCESS: Access to restricted resources, admin panels, or privileged data
+   - FAILURE: Login prompts, 401/403 errors, or redirects to login
+
+EVIDENCE REQUIREMENTS:
+- Quote exact strings from the response that prove your verdict
+- For XSS: Show where payload appears in response
+- For SQLi: Quote the exact error message
+- For path traversal: Quote file contents from response
+- DO NOT make assumptions - BASE VERDICT ON ACTUAL RESPONSE CONTENT
+
+Return this JSON structure:
 {
-  "verdict": "success",
-  "confidence": 85,
-  "evidence": ["evidence point 1", "evidence point 2"]
+  "explanation": "A forensic analysis of the response. Quote specific evidence from the response that supports your verdict. Be conservative - if you don't see clear evidence of exploitation, mark as failure.",
+  "verdict": "success/failure/suspicious",
+  "confidence": 0-100,
+  "evidence": ["Exact quote 1 from response", "Exact quote 2 from response", "Specific technical indicator"]
 }
 
-Do not use markdown code blocks. Return raw JSON only.`;
+Always prioritize technical depth in the 'explanation' field. Technical fields are for machine processing. Return raw JSON only.`;
 
         const fullPrompt = context 
             ? `${systemPrompt}\n\nUser: ${prompt}\n\nContext:\n${context}` 
@@ -192,7 +373,7 @@ Do not use markdown code blocks. Return raw JSON only.`;
                 }],
                 generationConfig: {
                     temperature: 0.7,
-                    maxOutputTokens: 2000,
+                    maxOutputTokens: 4096,
                 }
             },
             {
@@ -203,39 +384,62 @@ Do not use markdown code blocks. Return raw JSON only.`;
         );
 
         const aiMessage = response.data.candidates[0].content.parts[0].text;
-        console.log(aiMessage) //Debug
-        // Try to parse as JSON, fallback to plain text
+        console.log('[AI] Response length:', aiMessage.length, 'characters');
+        console.log('[AI] Raw response preview:', aiMessage.substring(0, 200));
+        
+        // Extract and clean JSON
+        let jsonString = extractAndCleanJSON(aiMessage);
+        console.log('[AI] Extracted JSON preview:', jsonString.substring(0, 200));
+        
+        // Try to parse as JSON, with multiple fallback strategies
         let parsedResponse;
+        let warning = null;
+        
         try {
-            // Extract JSON from markdown code blocks if present
-            const jsonMatch = aiMessage.match(/```json\s*([\s\S]*?)```/) || aiMessage.match(/```\s*([\s\S]*?)```/);
-            const jsonString = jsonMatch ? jsonMatch[1].trim() : aiMessage.trim();
-            
-            // Try to parse the JSON
+            // Direct parse attempt
             parsedResponse = JSON.parse(jsonString);
-            console.log('[AI] Successfully parsed JSON response');
-        } catch (e) {
-            console.log('[AI] Failed to parse as JSON, returning raw message:', e.message);
+            console.log('[AI] ✓ Successfully parsed JSON response');
             
-            // Try to find JSON object in the text without markdown blocks
-            const jsonObjectMatch = aiMessage.match(/\{[\s\S]*\}/);
-            if (jsonObjectMatch) {
-                try {
-                    parsedResponse = JSON.parse(jsonObjectMatch[0]);
-                    console.log('[AI] Successfully extracted and parsed JSON object');
-                } catch (e2) {
-                    parsedResponse = { message: aiMessage };
-                }
+        } catch (parseError) {
+            console.log('[AI] ✗ Initial JSON parse failed:', parseError.message);
+            
+            // Show problematic area for debugging
+            const errorPos = parseInt(parseError.message.match(/position (\d+)/)?.[1]) || 0;
+            if (errorPos > 0 && errorPos < jsonString.length) {
+                const start = Math.max(0, errorPos - 50);
+                const end = Math.min(jsonString.length, errorPos + 50);
+                console.log('[AI] Error near:', jsonString.substring(start, end));
+                console.log('[AI] Character at error:', JSON.stringify(jsonString[errorPos]));
+            }
+            
+            // Attempt repair
+            const repairResult = attemptJSONRepair(jsonString, parseError);
+            if (repairResult.success) {
+                parsedResponse = repairResult.data;
+                warning = repairResult.warning;
             } else {
-                parsedResponse = { message: aiMessage };
+                // Final fallback: return as plain message
+                console.log('[AI] ✗ All parsing attempts failed, returning as plain text');
+                parsedResponse = {
+                    message: aiMessage,
+                    parseError: parseError.message,
+                    hint: 'The AI response could not be parsed as JSON. The full response is shown above.'
+                };
             }
         }
-
-        res.json({
+        
+        // Build response
+        const responseData = {
             success: true,
             data: parsedResponse,
             rawMessage: aiMessage
-        });
+        };
+        
+        if (warning) {
+            responseData.warning = warning;
+        }
+        
+        res.json(responseData);
 
     } catch (error) {
         console.error('AI API error:', error.response?.data || error.message);

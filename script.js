@@ -77,6 +77,24 @@ async function handleAskAI() {
         // Log for debugging
         console.log('AI Response:', data);
 
+        // Show warning if response was truncated/repaired
+        if (data.warning) {
+            addChatMessage('ai', `⚠️ ${data.warning}`);
+        }
+
+        // Check if there was a parse error
+        if (data.data.parseError) {
+            console.error('JSON Parse Error:', data.data.parseError);
+            addChatMessage('ai', `❌ Failed to parse AI response as JSON.\n\nError: ${data.data.parseError}\n\n${data.data.hint || 'Please try rephrasing your question or check the console for details.'}`);
+            
+            // Show raw response in expandable section if available
+            if (data.rawMessage) {
+                console.log('Raw AI Response:', data.rawMessage);
+                addChatMessage('ai', `📄 Raw response logged to console (F12 to view).`);
+            }
+            return;
+        }
+
         // Handle different AI responses
         if (data.data.injectionPoints && data.data.payloads) {
             // Combined response: both injection points and payloads
@@ -87,16 +105,38 @@ async function handleAskAI() {
             handlePayloadsResponse(data.data);
         } else if (data.data.verdict) {
             handleAnalysisResponse(data.data);
+        } else if (data.data.explanation) {
+            // Generic structured response with explanation field
+            let message = data.data.explanation;
+            
+            // Add status if present
+            if (data.data.status) {
+                message += `\n\nStatus: ${data.data.status}`;
+            }
+            
+            // Add any other fields that might be present
+            for (const [key, value] of Object.entries(data.data)) {
+                if (key !== 'explanation' && key !== 'status' && typeof value === 'string') {
+                    message += `\n${key.charAt(0).toUpperCase() + key.slice(1)}: ${value}`;
+                }
+            }
+            
+            addChatMessage('ai', message);
         } else {
             // Generic response - check if it's markdown/JSON that wasn't parsed
             let displayMessage = data.data.message || data.rawMessage;
             
             // Try to clean up markdown code blocks for display
-            if (displayMessage.includes('```json')) {
+            if (displayMessage && displayMessage.includes('```json')) {
                 displayMessage = '⚠️ Received JSON response but failed to parse. Check console for details.\n\nRaw response:\n' + displayMessage;
             }
             
-            addChatMessage('ai', displayMessage);
+            if (displayMessage) {
+                addChatMessage('ai', displayMessage);
+            } else {
+                // Last fallback - show the entire data object as formatted JSON
+                addChatMessage('ai', 'Received response:\n' + JSON.stringify(data.data, null, 2));
+            }
         }
 
     } catch (error) {
@@ -202,12 +242,34 @@ async function handleAnalyzeResponse() {
 
         const data = await aiResponse.json();
         
+        console.log('Analysis response:', data);
+        
+        // Check if response has parse error
+        if (data.data.parseError) {
+            console.error('AI Response Parse Error:', data.data.parseError);
+            alert(`❌ Failed to parse AI response:\n\n${data.data.parseError}\n\nThe AI returned invalid JSON. Check console for details.`);
+            console.log('Raw AI message:', data.rawMessage);
+            return;
+        }
+        
         // Display analysis result
         if (data.data.verdict) {
             displayAnalysisResult(data.data);
+        } else if (data.data.message) {
+            // Check if message looks like JSON that failed to parse
+            const msg = data.data.message;
+            if (msg.includes('"verdict"') || msg.includes('"explanation"') || msg.includes('"evidence"')) {
+                console.error('AI returned JSON-like text but failed to parse as structured data');
+                console.log('Raw message:', msg);
+                alert(`❌ AI response format error\n\nThe AI returned what looks like JSON but it couldn't be parsed properly.\n\nCheck browser console (F12) for the raw response.`);
+            } else {
+                // Generic text response
+                alert(msg);
+            }
         } else {
-            // Fallback if AI didn't return structured data
-            alert(data.data.message || data.rawMessage);
+            // Unknown response format
+            console.error('Unexpected AI response format:', data);
+            alert(`❌ Unexpected response format\n\nThe AI response doesn't contain the expected data structure.\n\nCheck console for details.`);
         }
 
     } catch (error) {
@@ -543,26 +605,49 @@ function getStatusClass(status) {
  * Handle AI response with injection points
  */
 function handleInjectionPointsResponse(data) {
-    const { injectionPoints } = data;
+    const { explanation, injectionPoints } = data;
+    
+    // 1. Display human-readable explanation to user in chat
+    if (explanation) {
+        addChatMessage('ai', explanation);
+    }
+    
+    // 2. Process technical data in background
     state.injectionPoints = injectionPoints;
     
     // Update injection point selector
     updateInjectionPointSelector(injectionPoints);
     
-    let message = `Found ${injectionPoints.length} potential injection point(s):\n\n`;
-    injectionPoints.forEach((point, idx) => {
-        message += `${idx + 1}. **${point.name}** (${point.location}) - ${point.risk} risk\n   ${point.reason}\n\n`;
-    });
-    
-    message += 'Ask me to "generate [vulnerability type] payloads" to start testing!';
-    addChatMessage('ai', message);
+    // Add additional details if no explanation provided
+    if (!explanation) {
+        let message = `Found ${injectionPoints.length} potential injection point(s):\n\n`;
+        injectionPoints.forEach((point, idx) => {
+            message += `${idx + 1}. **${point.name}** (${point.location}) - ${point.risk} risk\n   ${point.reason}\n\n`;
+        });
+        
+        message += 'Ask me to "generate [vulnerability type] payloads" to start testing!';
+        addChatMessage('ai', message);
+    }
 }
 
 /**
  * Handle combined AI response with both injection points and payloads
  */
 function handleCombinedResponse(data) {
-    const { injectionPoints, payloads } = data;
+    const { explanation, injectionPoints, payloads } = data;
+    
+    // 1. Display human-readable explanation to user in chat
+    if (explanation) {
+        addChatMessage('ai', explanation);
+    }
+    
+    // Warn if too many payloads (might indicate truncation)
+    if (payloads && payloads.length > 20) {
+        console.warn(`[Warning] Received ${payloads.length} payloads (expected 10-15). Some may be incomplete.`);
+        addChatMessage('ai', `⚠️ Note: Received ${payloads.length} payloads. The last few might be incomplete. Consider using the first 15-20.`);
+    }
+    
+    // 2. Process technical data in background
     state.injectionPoints = injectionPoints;
     state.payloads = payloads;
     
@@ -578,13 +663,16 @@ function handleCombinedResponse(data) {
         payloadSelect.appendChild(option);
     });
     
-    let message = `✅ Found ${injectionPoints.length} injection point(s) and generated ${payloads.length} payloads!\n\n`;
-    message += 'Vulnerable parameters:\n';
-    injectionPoints.forEach((point, idx) => {
-        message += `${idx + 1}. **${point.name}** (${point.risk} risk)\n`;
-    });
-    message += `\nSelect a target parameter and payload, then click "Send Request" to test!`;
-    addChatMessage('ai', message);
+    // Add additional status message if no explanation provided
+    if (!explanation) {
+        let message = `✅ Found ${injectionPoints.length} injection point(s) and generated ${payloads.length} payloads!\n\n`;
+        message += 'Vulnerable parameters:\n';
+        injectionPoints.forEach((point, idx) => {
+            message += `${idx + 1}. **${point.name}** (${point.risk} risk)\n`;
+        });
+        message += `\nSelect a target parameter and payload, then click "Send Request" to test!`;
+        addChatMessage('ai', message);
+    }
 }
 
 /**
@@ -604,7 +692,20 @@ function updateInjectionPointSelector(injectionPoints) {
  * Handle AI response with payloads
  */
 function handlePayloadsResponse(data) {
-    const { payloads } = data;
+    const { explanation, payloads } = data;
+    
+    // 1. Display human-readable explanation to user in chat
+    if (explanation) {
+        addChatMessage('ai', explanation);
+    }
+    
+    // Warn if too many payloads (might indicate truncation)
+    if (payloads && payloads.length > 20) {
+        console.warn(`[Warning] Received ${payloads.length} payloads (expected 10-15). Some may be incomplete.`);
+        addChatMessage('ai', `⚠️ Note: Received ${payloads.length} payloads. The last few might be incomplete due to response size limits. Consider using the first 15-20 for best results.`);
+    }
+    
+    // 2. Process technical data in background
     state.payloads = payloads;
     
     // Update payload dropdown
@@ -616,22 +717,36 @@ function handlePayloadsResponse(data) {
         payloadSelect.appendChild(option);
     });
     
-    addChatMessage('ai', `✅ Generated ${payloads.length} payloads! Select one from the dropdown and click "Send Request" to test.`);
+    // Add status message if no explanation provided
+    if (!explanation) {
+        addChatMessage('ai', `✅ Generated ${payloads.length} payloads! Select one from the dropdown and click "Send Request" to test.`);
+    }
 }
 
 /**
  * Handle AI response with vulnerability analysis
  */
 function handleAnalysisResponse(data) {
+    const { explanation } = data;
+    
+    // 1. Display human-readable explanation to user in chat
+    if (explanation) {
+        addChatMessage('ai', explanation);
+    }
+    
+    // 2. Process technical data and display result panel
     displayAnalysisResult(data);
     
-    const verdictEmoji = {
-        'success': '✅',
-        'failure': '❌',
-        'suspicious': '⚠️'
-    }[data.verdict.toLowerCase()];
-    
-    addChatMessage('ai', `${verdictEmoji} Verdict: ${data.verdict.toUpperCase()} (${data.confidence}% confidence)`);
+    // Add verdict summary if no explanation provided
+    if (!explanation) {
+        const verdictEmoji = {
+            'success': '✅',
+            'failure': '❌',
+            'suspicious': '⚠️'
+        }[data.verdict.toLowerCase()];
+        
+        addChatMessage('ai', `${verdictEmoji} Verdict: ${data.verdict.toUpperCase()} (${data.confidence}% confidence)`);
+    }
 }
 
 /**
@@ -659,8 +774,31 @@ function displayAnalysisResult(data) {
     verdictIcon.textContent = icons[verdict.toLowerCase()] || '❓';
     verdictText.textContent = verdict.toUpperCase();
     
-    // Set confidence
-    document.getElementById('confidenceLevel').textContent = `${confidence}%`;
+    // Add verdict description
+    const verdictDescriptions = {
+        'success': 'Attack was successful - vulnerability confirmed',
+        'failure': 'Attack failed - no vulnerability detected',
+        'suspicious': 'Unusual behavior detected - requires manual review'
+    };
+    
+    // Set confidence with color coding
+    const confidenceElement = document.getElementById('confidenceLevel');
+    confidenceElement.textContent = `${confidence}%`;
+    
+    // Add subtitle with verdict description
+    const verdictSubtitle = document.createElement('div');
+    verdictSubtitle.style.fontSize = '12px';
+    verdictSubtitle.style.color = '#888';
+    verdictSubtitle.style.fontWeight = 'normal';
+    verdictSubtitle.textContent = verdictDescriptions[verdict.toLowerCase()] || '';
+    
+    // Clear previous subtitle if exists
+    const existingSubtitle = verdictBadge.querySelector('.verdict-subtitle');
+    if (existingSubtitle) {
+        existingSubtitle.remove();
+    }
+    verdictSubtitle.className = 'verdict-subtitle';
+    verdictBadge.appendChild(verdictSubtitle);
     
     // Set evidence
     const evidenceList = document.getElementById('evidenceList');
@@ -720,10 +858,42 @@ function addHistoryEntry(entry) {
 function viewHistoryItem(index) {
     const entry = state.history[index];
     if (entry) {
+        // Load request and response
         requestEditor.value = entry.request;
         responseEditor.value = entry.response;
-        alert(`Viewing test #${index + 1}`);
+        
+        // Hide analysis result (it's for the current test, not historical)
+        analysisResult.classList.add('hidden');
+        
+        // Visual feedback with toast notification
+        showToast(`📋 Loaded test #${index + 1} - ${entry.payload.substring(0, 30)}...`);
+        
+        // Scroll to request panel
+        requestEditor.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+}
+
+// Helper function to show toast notifications
+function showToast(message) {
+    // Remove existing toast if any
+    const existingToast = document.querySelector('.toast-notification');
+    if (existingToast) {
+        existingToast.remove();
+    }
+    
+    const toast = document.createElement('div');
+    toast.className = 'toast-notification';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Fade in
+    setTimeout(() => toast.classList.add('show'), 10);
+    
+    // Fade out and remove
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
 }
 
 // Function to update the latest history entry with AI verdict
