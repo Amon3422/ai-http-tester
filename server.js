@@ -459,9 +459,10 @@ Always prioritize technical depth in the 'explanation' field. Technical fields a
     }
 });
 
-// Start server
-app.listen(PORT, () => {
-    console.log(`
+// Start server (only when running locally, not on Vercel)
+if (require.main === module) {
+    app.listen(PORT, () => {
+        console.log(`
 ╔════════════════════════════════════════╗
 ║   🔐 AI HTTP Tester Backend           ║
 ║   Server running on port ${PORT}         ║
@@ -469,5 +470,9 @@ app.listen(PORT, () => {
 ║   Frontend: http://localhost:${PORT}      ║
 ║   API: http://localhost:${PORT}/api       ║
 ╚════════════════════════════════════════╝
-    `);
-});
+        `);
+    });
+}
+
+// Export for Vercel serverless
+module.exports = app;
