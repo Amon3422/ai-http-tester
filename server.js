@@ -22,6 +22,18 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+// Explicitly serve CSS with correct MIME type
+app.get('/style.css', (req, res) => {
+    res.contentType('text/css');
+    res.sendFile(path.join(__dirname, 'style.css'));
+});
+
+// Explicitly serve JavaScript with correct MIME type
+app.get('/script.js', (req, res) => {
+    res.contentType('application/javascript');
+    res.sendFile(path.join(__dirname, 'script.js'));
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', message: 'AI HTTP Tester Backend Running' });
