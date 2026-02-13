@@ -7,7 +7,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = 3000;
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 // Middleware
 app.use(cors());
@@ -262,10 +262,10 @@ app.post('/api/ai-analyze', async (req, res) => {
     try {
         const { prompt, context } = req.body;
 
-        if (!GEMINI_API_KEY) {
+        if (!GROQ_API_KEY) {
             return res.status(500).json({
                 error: 'API key not configured',
-                message: 'Please set GEMINI_API_KEY in .env file'
+                message: 'Please set GROQ_API_KEY in .env file. Get free API key at https://console.groq.com'
             });
         }
 
@@ -375,32 +375,38 @@ Return this JSON structure:
 
 Always prioritize technical depth in the 'explanation' field. Technical fields are for machine processing. Return raw JSON only.`;
 
-        const fullPrompt = context 
-            ? `${systemPrompt}\n\nUser: ${prompt}\n\nContext:\n${context}` 
-            : `${systemPrompt}\n\nUser: ${prompt}`;
+        const userMessage = context 
+            ? `User: ${prompt}\n\nContext:\n${context}` 
+            : prompt;
 
-        // Call Google Gemini API
+        // Call Groq API (OpenAI-compatible)
         const response = await axios.post(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`,
+            'https://api.groq.com/openai/v1/chat/completions',
             {
-                contents: [{
-                    parts: [{
-                        text: fullPrompt
-                    }]
-                }],
-                generationConfig: {
-                    temperature: 0.7,
-                    maxOutputTokens: 4096,
-                }
+                model: 'llama-3.3-70b-versatile', // Fast and accurate model
+                messages: [
+                    {
+                        role: 'system',
+                        content: systemPrompt
+                    },
+                    {
+                        role: 'user',
+                        content: userMessage
+                    }
+                ],
+                temperature: 0.7,
+                max_tokens: 4096,
+                response_format: { type: 'json_object' } // Force JSON output
             },
             {
                 headers: {
+                    'Authorization': `Bearer ${GROQ_API_KEY}`,
                     'Content-Type': 'application/json'
                 }
             }
         );
 
-        const aiMessage = response.data.candidates[0].content.parts[0].text;
+        const aiMessage = response.data.choices[0].message.content;
         console.log('[AI] Response length:', aiMessage.length, 'characters');
         console.log('[AI] Raw response preview:', aiMessage.substring(0, 200));
         
@@ -461,10 +467,10 @@ Always prioritize technical depth in the 'explanation' field. Technical fields a
     } catch (error) {
         console.error('AI API error:', error.response?.data || error.message);
         
-        if (error.response?.status === 400 && error.response?.data?.error?.message?.includes('API_KEY')) {
+        if (error.response?.status === 401 || error.response?.status === 403) {
             return res.status(401).json({
                 error: 'Invalid API key',
-                message: 'Please check your GEMINI_API_KEY in .env file'
+                message: 'Please check your GROQ_API_KEY in .env file. Get free API key at https://console.groq.com'
             });
         }
 

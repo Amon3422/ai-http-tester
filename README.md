@@ -15,16 +15,75 @@ This tool solves the "boring part" of pentesting: manually modifying and repeati
 
 ## 🏗️ Tech Stack
 
-* **Frontend:** React (Vite), Tailwind CSS (3-panel dashboard).
-* **Backend:** Node.js, Express (Acts as a Proxy to handle CORS and hide API Keys).
-* **AI Engine:** OpenAI API (`gpt-4o-mini`).
+* **Frontend:** Vanilla JavaScript, HTML5, CSS3 (Dark VS Code theme).
+* **Backend:** Node.js, Express (Acts as CORS proxy and API gateway).
+* **AI Engine:** Groq API (`llama-3.3-70b-versatile`) - **Free tier: 14,400 requests/day**.
 * **HTTP Client:** Axios.
 
 ## 📂 Project Structure
 
-The project is divided into two main folders:
+Single-page application with backend proxy:
 
 ```bash
 ai-http-tester/
-├── client/     # Frontend (React + Vite) running on port 5173
-└── server/     # Backend (Node.js + Express) running on port 3000
+├── index.html      # Main UI (3-panel layout)
+├── script.js       # Frontend logic
+├── style.css       # Dark theme styling
+├── server.js       # Backend proxy + AI integration
+├── package.json    # Dependencies
+└── .env           # API keys (create from .env.example)
+```
+
+## 🚀 Quick Start
+
+### 1. Get Groq API Key (Free)
+1. Visit [console.groq.com](https://console.groq.com)
+2. Sign up (GitHub/Google login available)
+3. Navigate to "API Keys" → Create new key
+4. Copy your API key
+
+### 2. Setup Project
+```bash
+# Clone or download the project
+cd ai-http-tester
+
+# Install dependencies
+npm install
+
+# Create .env file
+cp .env.example .env
+
+# Edit .env and add your API key:
+# GROQ_API_KEY=gsk_your_actual_key_here
+
+# Start server
+npm start
+```
+
+### 3. Open Browser
+Visit `http://localhost:3000` and start testing!
+
+## ✨ Features
+
+- 🎯 **AI-Powered Injection Point Detection** - Automatically finds vulnerable parameters
+- 🔬 **Smart Payload Generation** - Creates 10-15 attack payloads with WAF bypass techniques  
+- 📊 **Response Analysis** - AI analyzes responses for successful exploits
+- 📜 **Request History** - Track all tests with verdict updates
+- 💾 **Export History** - Save test results to JSON
+- 🎨 **Dark Theme** - VS Code-inspired interface
+
+## 🎯 Usage Example
+
+1. **Paste HTTP Request**: Copy raw request from Burp/DevTools
+2. **Ask AI**: Type "test for SQL injection" 
+3. **Select Payload**: Choose from generated payloads dropdown
+4. **Send Request**: Click "Send Request" with payload applied
+5. **Analyze**: Click "Analyze Response" for AI verdict
+
+## ⚠️ Legal Disclaimer
+
+This tool is for **authorized security testing only**. Only test applications you own or have written permission to test.
+
+## 📝 License
+
+MIT License - Free to use for educational and professional security testing purposes.

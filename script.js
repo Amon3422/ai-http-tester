@@ -144,7 +144,7 @@ async function handleAskAI() {
         if (chatMessages.lastChild?.textContent?.includes('Thinking')) {
             chatMessages.removeChild(chatMessages.lastChild);
         }
-        addChatMessage('ai', `❌ Error: ${error.message}\n\nMake sure you've set up your GEMINI_API_KEY in the .env file.`);
+        addChatMessage('ai', `❌ Error: ${error.message}\n\nMake sure you've set up your GROQ_API_KEY in the .env file. Get free API key at https://console.groq.com`);
         console.error('AI error:', error);
     }
 }
