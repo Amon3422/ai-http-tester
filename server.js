@@ -4,10 +4,54 @@ const axios = require('axios');
 const path = require('path');
 require('dotenv').config();
 
+/**
+ * ═══════════════════════════════════════════════════════════════
+ * AI HTTP TESTER - DUAL-MODEL ARCHITECTURE
+ * ═══════════════════════════════════════════════════════════════
+ * 
+ * This backend implements a specialized dual-model system optimized
+ * for security testing workflows:
+ * 
+ * 🧠 SMART MODEL (e.g., deepseek-r1:8b)
+ *    Purpose: Discovery & Weaponization
+ *    - Finding injection points
+ *    - Generating attack payloads
+ *    - Complex security analysis
+ *    Temperature: 0.6 (creative payload generation)
+ *    VRAM: ~4GB
+ * 
+ * ⚡ FAST MODEL (e.g., deepseek-r1:1.5b)
+ *    Purpose: Response Analysis & Triage
+ *    - Quick vulnerability verdicts
+ *    - Evidence extraction
+ *    - Pattern matching
+ *    Temperature: 0.1 (precise, deterministic)
+ *    VRAM: ~1.5GB
+ * 
+ * KEY FEATURES:
+ * - Automatic model selection based on prompt keywords
+ * - Specialized system prompts for each task
+ * - DeepSeek-R1 <think> tag stripping
+ * - VRAM management with keep_alive: "1m"
+ * - JSON repair and extraction logic
+ * 
+ * COMPATIBILITY:
+ * - Ollama (recommended for local deployment)
+ * - LM Studio, LocalAI
+ * - Any OpenAI-compatible API endpoint
+ * 
+ * See DUAL_MODEL_GUIDE.md for complete documentation
+ * ═══════════════════════════════════════════════════════════════
+ */
 
 const app = express();
 const PORT = 3000;
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+// Default configuration (can be overridden by client)
+const DEFAULT_CONFIG = {
+    endpoint: 'http://localhost:11434/v1/chat/completions',
+    model: 'deepseek-r1:7b'  // 7b is optimal for RTX 3050 4GB
+};
 
 // Middleware
 app.use(cors());
@@ -134,14 +178,21 @@ app.post('/api/send-request', async (req, res) => {
 
 // Helper function to extract and clean JSON from AI responses
 function extractAndCleanJSON(text) {
-    // First try to extract from markdown blocks
-    const jsonMatch = text.match(/```json\s*([\s\S]*?)```/) || text.match(/```\s*([\s\S]*?)```/);
-    let jsonString = jsonMatch ? jsonMatch[1].trim() : text.trim();
+    // CRITICAL: Remove DeepSeek-R1 thinking tags first
+    // DeepSeek-R1 outputs reasoning in <think>...</think> tags
+    let cleanedText = text.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+    
+    // Remove markdown code block markers (```json or ```)
+    cleanedText = cleanedText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+    
+    // First try to extract from markdown blocks (if any remain)
+    const jsonMatch = cleanedText.match(/```json\s*([\s\S]*?)```/) || cleanedText.match(/```\s*([\s\S]*?)```/);
+    let jsonString = jsonMatch ? jsonMatch[1].trim() : cleanedText.trim();
     
     // If no markdown blocks, try to find JSON object
     if (!jsonMatch && !jsonString.startsWith('{')) {
         // Try to find a JSON object in the text
-        const objectMatch = text.match(/\{[\s\S]*\}/);
+        const objectMatch = cleanedText.match(/\{[\s\S]*\}/);
         if (objectMatch) {
             jsonString = objectMatch[0];
         }
@@ -183,6 +234,25 @@ function attemptJSONRepair(jsonString, originalError) {
         console.log('[AI] Cleaned up escape sequences');
     }
     
+    // Strategy 0.5: Fix problematic inline examples causing quote issues
+    // Example: "reason": "Parameter: POST /url?x=alert('test')" breaks parsing
+    if (originalError.message.includes("Unexpected token '") || 
+        originalError.message.includes("Unexpected string")) {
+        console.log('[AI] Detected quote/string issues, cleaning problematic patterns...');
+        
+        // Find and clean strings that contain HTTP methods with quotes/params
+        // Pattern: "key": "text (POST|GET) /path?x=value('...')" 
+        workingString = workingString.replace(
+            /"([^"]*?)"\s*:\s*"([^"]*?)(POST|GET|PUT|DELETE|PATCH)[^"]*?\([^)]*?\)[^"]*?"/gi,
+            (match, key, prefix, method) => {
+                // Simplify to remove the problematic part
+                return `"${key}": "${prefix}${method} request parameter"`;
+            }
+        );
+        
+        console.log('[AI] Cleaned inline HTTP examples from strings');
+    }
+    
     // Try parsing the cleaned version
     try {
         const parsed = JSON.parse(workingString);
@@ -190,7 +260,9 @@ function attemptJSONRepair(jsonString, originalError) {
         return { 
             success: true, 
             data: parsed, 
-            warning: hasInvalidEscapes ? 'Response contained invalid escape sequences and was auto-repaired.' : undefined 
+            warning: hasInvalidEscapes || originalError.message.includes("Unexpected token '") 
+                ? 'Response was auto-repaired due to formatting issues.' 
+                : undefined 
         };
     } catch (e) {
         console.log('[AI] ✗ Still invalid after cleanup:', e.message);
@@ -257,152 +329,258 @@ function attemptJSONRepair(jsonString, originalError) {
     return { success: false };
 }
 
-// AI Analysis endpoint
-app.post('/api/ai-analyze', async (req, res) => {
+// AI Test endpoint
+app.post('/api/ai-test', async (req, res) => {
     try {
-        const { prompt, context } = req.body;
+        const { endpoint, model, type } = req.body;
 
-        if (!GROQ_API_KEY) {
-            return res.status(500).json({
-                error: 'API key not configured',
-                message: 'Please set GROQ_API_KEY in .env file. Get free API key at https://console.groq.com'
+        if (!endpoint || !model) {
+            return res.status(400).json({
+                error: 'Missing configuration',
+                message: 'Please provide endpoint and model'
             });
         }
 
-        console.log(`[AI] Analyzing: ${prompt.substring(0, 50)}...`);
+        console.log(`[AI Test] Testing ${type} model: ${model} at ${endpoint}`);
 
-        const systemPrompt = `You are a Senior Security Engineer and Pentesting Assistant. Your goal is to provide actionable intelligence for security testing.
+        // Simple test prompt - Include keep_alive for consistency
+        const testResponse = await axios.post(
+            endpoint,
+            {
+                model: model,
+                messages: [
+                    {
+                        role: 'user',
+                        content: 'Reply with just "OK" if you can read this.'
+                    }
+                ],
+                temperature: 0.1,
+                max_tokens: 10,
+                stream: false,
+                keep_alive: "1m"
+            },
+            {
+                timeout: 10000,
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            }
+        );
 
-⚠️ CRITICAL JSON FORMATTING RULES - READ CAREFULLY ⚠️
+        console.log(`[AI Test] ${type} model responded successfully`);
+        
+        res.json({
+            success: true,
+            message: `${type} model connected successfully`,
+            response: testResponse.data.choices[0].message.content
+        });
 
-JSON strings use DOUBLE QUOTES ("). Inside double-quoted strings:
-- Single quotes (') are REGULAR CHARACTERS - they need NO escaping
-- Double quotes (") MUST be escaped as \\"
-- Backslashes (\\) MUST be escaped as \\\\
+    } catch (error) {
+        console.error('AI Test error:', error.message);
+        
+        // Log detailed error information
+        if (error.response) {
+            console.error('Status:', error.response.status);
+            console.error('Response data:', JSON.stringify(error.response.data, null, 2));
+        }
+        
+        if (error.code === 'ECONNREFUSED') {
+            return res.status(500).json({
+                error: 'Connection refused',
+                message: 'Could not connect to the endpoint. Make sure Ollama is running (ollama serve).'
+            });
+        }
 
-CORRECT WAY to write payloads in JSON:
-✓ "explanation": "The payload alert('XSS') was tested"
-✓ "explanation": "Found SQL: SELECT * FROM users WHERE id='1'"
-✓ "explanation": "The script tag <script>alert('test')</script> was blocked"
-✓ "explanation": "SQL code: OR '1'='1' was detected"
+        if (error.response?.status === 404) {
+            return res.status(404).json({
+                error: 'Model not found',
+                message: `Model "${model}" not found. Pull it with: ollama pull ${model}`,
+                details: error.response.data
+            });
+        }
 
-WRONG - NEVER DO THIS:
-✗ "explanation": "The payload alert(\\'XSS\\') was tested"
-✗ "explanation": "Found SQL: SELECT * FROM users WHERE id=\\'1\\'"
-✗ "explanation": "The script tag <script>alert(\\'test\\')</script> was blocked"
+        res.status(500).json({
+            error: 'Test failed',
+            message: error.message,
+            details: error.response?.data || 'Check if Ollama is running and model exists'
+        });
+    }
+});
 
-Rule: If you're writing text inside "..." in JSON, single quotes ' are just regular characters. DO NOT put backslash before them.
+// SYSTEM PROMPT FOR DISCOVERY (Smart Model - 7b)
+// Focuses on intelligence: finding vulnerabilities and generating sophisticated payloads
+const systemPromptDiscovery = `You are a Senior Security Engineer and Pentesting Assistant. Your goal is to identify vulnerabilities and generate high-quality payloads.
 
-When quoting SQL or XSS payloads containing single quotes:
-- ✓ CORRECT: "explanation": "The payload OR '1'='1' succeeded"
-- ✗ WRONG: "explanation": "The payload OR \\'1\\'=\\'1\\' succeeded"
+CRITICAL OUTPUT FORMAT:
+1. Return ONLY pure JSON - no markdown, no code blocks, no preamble, no thinking
+2. Start your response with { and end with }
+3. Include detailed "explanation" field in English
 
-MANDATORY STRUCTURE:
-1. Respond with pure JSON only (no markdown, no code blocks)
-2. Use double quotes for all keys and string values
-3. Every response MUST include "explanation" field
+JSON STRING SAFETY RULES:
+- When writing explanations or reasons, DO NOT include example URLs or request snippets
+- Keep explanations technical and descriptive only
+- Single quotes in strings are safe: "payload": "alert('XSS')" is correct
+- NEVER put unescaped double quotes inside strings
 
-CRITICAL: Every response MUST include a detailed "explanation" field in English. This field should act as a "Security Consultant's Summary," explaining the logic behind your findings, why certain parameters were chosen, or how specific payloads reveal a vulnerability.
+CORRECT JSON EXAMPLES:
+✓ "reason": "Query parameter accepts unfiltered user input"
+✓ "explanation": "XSS payloads can be injected through the search parameter"
+✓ "payloads": ["<script>alert(1)</script>", "<img src=x onerror=alert(1)>"]
 
-When asked to find injection points:
-- Scan for vulnerable parameters in JSON/Form-encoded bodies, Query strings, and Headers.
-- Categorize and prioritize based on impact (HIGH/MEDIUM/LOW).
-- Return this JSON structure:
-{
-  "explanation": "A deep-dive summary into the request's attack surface. Explain why specific locations are prioritized and the potential impact of the identified vulnerabilities.",
-  "injectionPoints": [
-    {"name": "paramName", "location": "Body (Form)/Body (JSON)/Header/Query", "risk": "HIGH/MEDIUM/LOW", "reason": "Detailed technical explanation"}
-  ]
-}
+WRONG - CAUSES PARSE ERRORS:
+✗ "reason": "Parameter: POST /search?q=alert('x')" ← NO request examples in strings
+✗ "explanation": "The URL /test?id=<script> allows XSS" ← NO URL examples
 
-When asked to generate payloads:
-- Create EXACTLY 10-15 payloads ONLY. DO NOT generate more than 15 payloads.
-- Range from basic detection to advanced WAF-evasion techniques.
-- STOP at 15 payloads maximum. Quality over quantity.
-- Return this JSON structure:
-{
-  "explanation": "Summarize the payload strategy. Explain the difference between the basic and advanced payloads provided and what specific filters they are designed to bypass.",
-  "payloads": ["payload1", "payload2", ... up to 15 maximum]
-}
+ACTIONS:
 
-When asked to "test for [vulnerability]" (Combined Action):
-- Perform both discovery and weaponization in one pass.
-- Generate MAXIMUM 12-15 payloads ONLY. Do not exceed this limit.
-- Return this JSON structure:
-{
-  "explanation": "A comprehensive testing roadmap. Summarize the target parameters and how the generated payloads should be interpreted based on the injection points.",
-  "injectionPoints": [...],
-  "payloads": [... maximum 15 items]
-}
+1. FIND INJECTION POINTS:
+   - Scan parameters in Body (JSON/Form), Query strings, and Headers
+   - Categorize risk: HIGH/MEDIUM/LOW
+   - Return structure:
+   {
+     "explanation": "Deep analysis of attack surface and why these points are vulnerable",
+     "injectionPoints": [
+       {"name": "paramName", "location": "Body (JSON)/Query/Header", "risk": "HIGH", "reason": "Technical explanation"}
+     ]
+   }
 
-When asked to analyze responses:
-CRITICAL ANALYSIS RULES - READ CAREFULLY:
+2. GENERATE PAYLOADS:
+   - Create EXACTLY 10-15 payloads (Max 15, Quality over Quantity)
+   - Range from basic detection to advanced WAF-evasion techniques
+   - Return structure:
+   {
+     "explanation": "Payload strategy summary. Explain basic vs advanced payloads and bypass techniques",
+     "payloads": ["payload1", "payload2", ... max 15]
+   }
 
-1. XSS Testing Analysis:
-   - SUCCESS: ONLY if the EXACT payload from the request appears UNESCAPED in the response HTML/body
-   - Check if payload like <script>alert('XSS')</script> appears literally in the response
-   - Do NOT count legitimate website <script> tags as reflection
-   - FAILURE: If payload is encoded (e.g., &lt;script&gt;), filtered, or not present at all
-   - Even with 200 OK status, if payload is NOT reflected = FAILURE
+3. COMBINED ACTION (test for [vulnerability]):
+   - Both discovery and weaponization in one pass
+   - Maximum 12-15 payloads
+   - Return structure:
+   {
+     "explanation": "Comprehensive testing roadmap",
+     "injectionPoints": [...],
+     "payloads": [... max 15]
+   }
 
-2. SQL Injection Testing Analysis:
-   - SUCCESS: Database error messages (MySQL/MSSQL/PostgreSQL syntax errors, column names, table names)
-   - SUSPICIOUS: Significant response time delay (>5s), different response length/structure
-   - FAILURE: Normal response, no errors, no behavioral changes
+Return pure JSON only. No thinking process, no markdown.`;
 
-3. Path Traversal / LFI Testing Analysis:
-   - SUCCESS: File contents revealed (e.g., /etc/passwd, C:\\windows\\win.ini, source code)
-   - FAILURE: Error pages, access denied, or normal application response
+// SYSTEM PROMPT FOR ANALYSIS (Fast Model - 1.5b)
+// Focuses on speed and accuracy: quick vulnerability triage
+const systemPromptAnalysis = `You are a Forensic Security Analyst performing Vulnerability Triage. Analyze HTTP responses quickly and accurately.
 
-4. Authentication Bypass Testing Analysis:
-   - SUCCESS: Access to restricted resources, admin panels, or privileged data
-   - FAILURE: Login prompts, 401/403 errors, or redirects to login
+CRITICAL OUTPUT FORMAT:
+1. Return ONLY pure JSON - no markdown, no code blocks, no thinking
+2. Start your response with { and end with }
+3. When quoting evidence, keep quotes simple
+
+ANALYSIS LOGIC:
+
+1. XSS Testing:
+   - SUCCESS: EXACT payload appears UNESCAPED in response HTML
+   - SUSPICIOUS: Payload reflected but may be filtered/encoded
+   - FAILURE: Payload not present, blocked, or encoded
+
+2. SQL Injection:
+   - SUCCESS: Database error messages (syntax errors, table/column names)
+   - SUSPICIOUS: Response time delay (>5s) or different response structure
+   - FAILURE: Normal response, no errors
+
+3. Path Traversal/LFI:
+   - SUCCESS: File contents revealed (/etc/passwd, win.ini, source code)
+   - FAILURE: Error pages, access denied, normal response
+
+4. Authentication Bypass:
+   - SUCCESS: Access to restricted resources, admin panels
+   - FAILURE: Login prompts, 401/403 errors, redirects
 
 EVIDENCE REQUIREMENTS:
-- Quote exact strings from the response that prove your verdict
-- For XSS: Show where payload appears in response
-- For SQLi: Quote the exact error message
-- For path traversal: Quote file contents from response
-- DO NOT make assumptions - BASE VERDICT ON ACTUAL RESPONSE CONTENT
+- Quote EXACT strings from response that prove your verdict
+- For XSS: Show where payload appears
+- For SQLi: Quote error message
+- For path traversal: Quote file contents
+- Be CONSERVATIVE: if no clear evidence → mark as FAILURE
 
-Return this JSON structure:
+JSON STRUCTURE:
 {
-  "explanation": "A forensic analysis of the response. Quote specific evidence from the response that supports your verdict. Be conservative - if you don't see clear evidence of exploitation, mark as failure.",
-  "verdict": "success/failure/suspicious",
+  "explanation": "Brief forensic summary with quoted evidence from response",
+  "verdict": "success/suspicious/failure",
   "confidence": 0-100,
-  "evidence": ["Exact quote 1 from response", "Exact quote 2 from response", "Specific technical indicator"]
+  "evidence": ["Exact quote from response", "Specific indicator", "..."]
 }
 
-Always prioritize technical depth in the 'explanation' field. Technical fields are for machine processing. Return raw JSON only.`;
+Return pure JSON only.`;
+
+// AI Analysis endpoint
+app.post('/api/ai-analyze', async (req, res) => {
+    try {
+        const { prompt, context, config } = req.body;
+
+        // Use provided config or fall back to default
+        const llmConfig = config || DEFAULT_CONFIG;
+
+        if (!llmConfig.endpoint || !llmConfig.model) {
+            return res.status(400).json({
+                error: 'Configuration missing',
+                message: 'Please configure your LLM endpoint and model in the Configuration panel'
+            });
+        }
+
+        // Determine if this is a DISCOVERY or ANALYSIS request
+        const isAnalysisRequest = prompt.toLowerCase().includes('analyze') || 
+                                 context?.toLowerCase().includes('response:');
+        
+        const systemPrompt = isAnalysisRequest ? systemPromptAnalysis : systemPromptDiscovery;
+        const modelType = isAnalysisRequest ? 'ANALYSIS (Fast)' : 'DISCOVERY (Smart)';
+        const temperature = isAnalysisRequest ? 0.1 : 0.6; // Analysis needs precision, Discovery needs creativity
+
+        console.log(`[AI] Mode: ${modelType}`);
+        console.log(`[AI] Using model: ${llmConfig.model} at ${llmConfig.endpoint}`);
+        console.log(`[AI] Temperature: ${temperature}`);
+        console.log(`[AI] Prompt: ${prompt.substring(0, 50)}...`);
 
         const userMessage = context 
             ? `User: ${prompt}\n\nContext:\n${context}` 
             : prompt;
 
-        // Call Groq API (OpenAI-compatible)
+        // Prepare request body
+        const requestBody = {
+            model: llmConfig.model,
+            messages: [
+                {
+                    role: 'system',
+                    content: systemPrompt
+                },
+                {
+                    role: 'user',
+                    content: userMessage
+                }
+            ],
+            temperature: temperature,
+            max_tokens: 4096,
+            stream: false,
+            // CRITICAL for VRAM management on RTX 3050 4GB
+            // Unload model from VRAM after 1 minute of inactivity
+            // This allows switching between 8b and 1.5b models smoothly
+            keep_alive: "1m"
+        };
+
+        // Add response_format if the endpoint supports it (OpenAI-compatible)
+        // Ollama might not support this, so we'll handle JSON parsing ourselves
+        if (llmConfig.forceJson !== false) {
+            // Most OpenAI-compatible APIs support this
+            // requestBody.response_format = { type: 'json_object' };
+        }
+
+        // Call LLM API (OpenAI-compatible format)
         const response = await axios.post(
-            'https://api.groq.com/openai/v1/chat/completions',
-            {
-                model: 'llama-3.3-70b-versatile', // Fast and accurate model
-                messages: [
-                    {
-                        role: 'system',
-                        content: systemPrompt
-                    },
-                    {
-                        role: 'user',
-                        content: userMessage
-                    }
-                ],
-                temperature: 0.7,
-                max_tokens: 4096,
-                response_format: { type: 'json_object' } // Force JSON output
-            },
+            llmConfig.endpoint,
+            requestBody,
             {
                 headers: {
-                    'Authorization': `Bearer ${GROQ_API_KEY}`,
                     'Content-Type': 'application/json'
-                }
+                },
+                timeout: 60000 // 60 second timeout for local models
             }
         );
 
@@ -467,17 +645,24 @@ Always prioritize technical depth in the 'explanation' field. Technical fields a
     } catch (error) {
         console.error('AI API error:', error.response?.data || error.message);
         
-        if (error.response?.status === 401 || error.response?.status === 403) {
-            return res.status(401).json({
-                error: 'Invalid API key',
-                message: 'Please check your GROQ_API_KEY in .env file. Get free API key at https://console.groq.com'
+        if (error.code === 'ECONNREFUSED') {
+            return res.status(500).json({
+                error: 'Connection refused',
+                message: 'Could not connect to LLM endpoint. Make sure your local LLM service (e.g., Ollama) is running.'
+            });
+        }
+
+        if (error.code === 'ETIMEDOUT') {
+            return res.status(408).json({
+                error: 'Request timeout',
+                message: 'The LLM took too long to respond. Try using a faster model or increase timeout.'
             });
         }
 
         res.status(500).json({
             error: 'AI request failed',
             message: error.message,
-            details: error.response?.data?.error?.message || 'Unknown error'
+            details: error.response?.data?.error?.message || 'Check if your LLM endpoint and model are configured correctly'
         });
     }
 });

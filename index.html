@@ -11,7 +11,42 @@
         <!-- Header -->
         <header class="header">
             <h1>🔐 AI HTTP Tester</h1>
+            <button id="configToggleBtn" class="btn btn-config">⚙️ Configuration</button>
         </header>
+
+        <!-- Configuration Panel (Hidden by default) -->
+        <section class="config-panel hidden" id="configPanel">
+            <h2>⚙️ LLM Configuration</h2>
+            <div class="config-grid">
+                <div class="config-group">
+                    <h3>🧠 Smart Model (Injection Points & Payloads)</h3>
+                    <div class="input-group">
+                        <label for="smartEndpoint">Endpoint URL:</label>
+                        <input type="text" id="smartEndpoint" placeholder="http://localhost:11434/v1/chat/completions" class="config-input" />
+                    </div>
+                    <div class="input-group">
+                        <label for="smartModel">Model Name:</label>
+                        <input type="text" id="smartModel" placeholder="deepseek-r1:8b" class="config-input" />
+                    </div>
+                </div>
+                <div class="config-group">
+                    <h3>⚡ Fast Model (Response Analysis)</h3>
+                    <div class="input-group">
+                        <label for="fastEndpoint">Endpoint URL:</label>
+                        <input type="text" id="fastEndpoint" placeholder="http://localhost:11434/v1/chat/completions" class="config-input" />
+                    </div>
+                    <div class="input-group">
+                        <label for="fastModel">Model Name:</label>
+                        <input type="text" id="fastModel" placeholder="deepseek-r1:1.5b" class="config-input" />
+                    </div>
+                </div>
+            </div>
+            <div class="config-actions">
+                <button id="saveConfigBtn" class="btn btn-primary">💾 Save Configuration</button>
+                <button id="testConfigBtn" class="btn btn-secondary">🧪 Test Connection</button>
+                <span id="configStatus" class="config-status"></span>
+            </div>
+        </section>
 
         <!-- AI Chat Section -->
         <section class="ai-chat">

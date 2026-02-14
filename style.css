@@ -26,12 +26,131 @@ body {
     padding: 20px;
     border-radius: 8px;
     border: 1px solid #3e3e42;
-    text-align: center;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
 .header h1 {
     color: #4ec9b0;
     font-size: 28px;
+}
+
+.btn-config {
+    background: #0e639c;
+    color: #ffffff;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background 0.2s;
+}
+
+.btn-config:hover {
+    background: #1177bb;
+}
+
+/* Configuration Panel */
+.config-panel {
+    background: #252526;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid #3e3e42;
+    margin-bottom: 10px;
+}
+
+.config-panel.hidden {
+    display: none;
+}
+
+.config-panel h2 {
+    color: #4ec9b0;
+    font-size: 20px;
+    margin-bottom: 20px;
+}
+
+.config-panel h3 {
+    color: #569cd6;
+    font-size: 16px;
+    margin-bottom: 15px;
+}
+
+.config-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 30px;
+    margin-bottom: 20px;
+}
+
+.config-group {
+    background: #1e1e1e;
+    padding: 20px;
+    border-radius: 6px;
+    border: 1px solid #3e3e42;
+}
+
+.input-group {
+    margin-bottom: 15px;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 5px;
+    color: #9cdcfe;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.config-input {
+    width: 100%;
+    padding: 10px;
+    background: #3c3c3c;
+    border: 1px solid #3e3e42;
+    border-radius: 4px;
+    color: #d4d4d4;
+    font-size: 14px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.config-input:focus {
+    outline: none;
+    border-color: #007acc;
+}
+
+.config-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.config-status {
+    margin-left: auto;
+    padding: 8px 15px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.config-status.success {
+    background: #2d5016;
+    color: #89d185;
+}
+
+.config-status.error {
+    background: #5a1d1d;
+    color: #f48771;
+}
+
+.config-status.testing {
+    background: #3e3e42;
+    color: #9cdcfe;
+}
+
+@media (max-width: 1024px) {
+    .config-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* AI Chat Section */

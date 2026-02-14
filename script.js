@@ -4,7 +4,17 @@ let state = {
     currentRequest: '',
     history: [],
     injectionPoints: [],
-    lastSentRequest: null  // Store the actual request sent (with payload applied)
+    lastSentRequest: null,  // Store the actual request sent (with payload applied)
+    config: {
+        smart: {
+            endpoint: 'http://localhost:11434/v1/chat/completions',
+            model: 'deepseek-r1:7b'  // 7b is better for 4GB GPUs
+        },
+        fast: {
+            endpoint: 'http://localhost:11434/v1/chat/completions',
+            model: 'deepseek-r1:1.5b'
+        }
+    }
 };
 
 // DOM Elements
@@ -22,6 +32,17 @@ const analysisResult = document.getElementById('analysisResult');
 const exportHistoryBtn = document.getElementById('exportHistoryBtn');
 const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 
+// Configuration DOM Elements
+const configToggleBtn = document.getElementById('configToggleBtn');
+const configPanel = document.getElementById('configPanel');
+const smartEndpointInput = document.getElementById('smartEndpoint');
+const smartModelInput = document.getElementById('smartModel');
+const fastEndpointInput = document.getElementById('fastEndpoint');
+const fastModelInput = document.getElementById('fastModel');
+const saveConfigBtn = document.getElementById('saveConfigBtn');
+const testConfigBtn = document.getElementById('testConfigBtn');
+const configStatus = document.getElementById('configStatus');
+
 // Event Listeners
 askAiBtn.addEventListener('click', handleAskAI);
 chatInput.addEventListener('keypress', (e) => {
@@ -33,9 +54,125 @@ analyzeBtn.addEventListener('click', handleAnalyzeResponse);
 exportHistoryBtn.addEventListener('click', exportHistory);
 clearHistoryBtn.addEventListener('click', clearHistory);
 
+// Configuration Event Listeners
+configToggleBtn.addEventListener('click', toggleConfigPanel);
+saveConfigBtn.addEventListener('click', saveConfiguration);
+testConfigBtn.addEventListener('click', testConfiguration);
+
 // Initialize
 console.log('AI HTTP Tester initialized');
 console.log('Ready to start testing!');
+loadConfiguration();
+
+// Configuration Functions
+function loadConfiguration() {
+    const savedConfig = localStorage.getItem('aiHttpTesterConfig');
+    if (savedConfig) {
+        try {
+            state.config = JSON.parse(savedConfig);
+            console.log('Loaded configuration from localStorage:', state.config);
+        } catch (error) {
+            console.error('Failed to parse saved configuration:', error);
+        }
+    }
+    
+    // Update UI with loaded config
+    smartEndpointInput.value = state.config.smart.endpoint;
+    smartModelInput.value = state.config.smart.model;
+    fastEndpointInput.value = state.config.fast.endpoint;
+    fastModelInput.value = state.config.fast.model;
+}
+
+function toggleConfigPanel() {
+    configPanel.classList.toggle('hidden');
+}
+
+function saveConfiguration() {
+    // Get values from inputs
+    state.config = {
+        smart: {
+            endpoint: smartEndpointInput.value.trim(),
+            model: smartModelInput.value.trim()
+        },
+        fast: {
+            endpoint: fastEndpointInput.value.trim(),
+            model: fastModelInput.value.trim()
+        }
+    };
+    
+    // Validate
+    if (!state.config.smart.endpoint || !state.config.smart.model) {
+        showConfigStatus('Please fill in smart model endpoint and name', 'error');
+        return;
+    }
+    
+    if (!state.config.fast.endpoint || !state.config.fast.model) {
+        showConfigStatus('Please fill in fast model endpoint and name', 'error');
+        return;
+    }
+    
+    // Save to localStorage
+    localStorage.setItem('aiHttpTesterConfig', JSON.stringify(state.config));
+    showConfigStatus('✓ Configuration saved successfully!', 'success');
+    
+    console.log('Saved configuration:', state.config);
+}
+
+async function testConfiguration() {
+    showConfigStatus('Testing connection...', 'testing');
+    
+    try {
+        // Test smart model
+        const smartResponse = await fetch('/api/ai-test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                endpoint: smartEndpointInput.value.trim(),
+                model: smartModelInput.value.trim(),
+                type: 'smart'
+            })
+        });
+        
+        if (!smartResponse.ok) {
+            const error = await smartResponse.json();
+            throw new Error(`Smart model: ${error.message}`);
+        }
+        
+        // Test fast model
+        const fastResponse = await fetch('/api/ai-test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                endpoint: fastEndpointInput.value.trim(),
+                model: fastModelInput.value.trim(),
+                type: 'fast'
+            })
+        });
+        
+        if (!fastResponse.ok) {
+            const error = await fastResponse.json();
+            throw new Error(`Fast model: ${error.message}`);
+        }
+        
+        showConfigStatus('✓ Both models connected successfully!', 'success');
+        
+    } catch (error) {
+        showConfigStatus(`✗ Connection failed: ${error.message}`, 'error');
+        console.error('Test configuration error:', error);
+    }
+}
+
+function showConfigStatus(message, type) {
+    configStatus.textContent = message;
+    configStatus.className = `config-status ${type}`;
+    
+    if (type === 'success') {
+        setTimeout(() => {
+            configStatus.textContent = '';
+            configStatus.className = 'config-status';
+        }, 3000);
+    }
+}
 
 // Placeholder functions for Step 1 (will implement in later steps)
 async function handleAskAI() {
@@ -52,7 +189,7 @@ async function handleAskAI() {
     try {
         const request = requestEditor.value.trim();
         
-        // Call AI API
+        // Call AI API with configuration
         const response = await fetch('/api/ai-analyze', {
             method: 'POST',
             headers: {
@@ -60,7 +197,8 @@ async function handleAskAI() {
             },
             body: JSON.stringify({
                 prompt: userMessage,
-                context: request || null
+                context: request || null,
+                config: state.config.smart  // Use smart model for injection points & payloads
             })
         });
 
@@ -144,7 +282,7 @@ async function handleAskAI() {
         if (chatMessages.lastChild?.textContent?.includes('Thinking')) {
             chatMessages.removeChild(chatMessages.lastChild);
         }
-        addChatMessage('ai', `❌ Error: ${error.message}\n\nMake sure you've set up your GROQ_API_KEY in the .env file. Get free API key at https://console.groq.com`);
+        addChatMessage('ai', `❌ Error: ${error.message}\n\nMake sure your LLM endpoint is configured correctly. Click the ⚙️ Configuration button to set up your local models.`);
         console.error('AI error:', error);
     }
 }
@@ -231,7 +369,8 @@ async function handleAnalyzeResponse() {
             },
             body: JSON.stringify({
                 prompt: 'Analyze this HTTP response for security vulnerabilities. Was the attack successful?',
-                context: `Request:\n${state.lastSentRequest}\n\nResponse:\n${response}`
+                context: `Request:\n${state.lastSentRequest}\n\nResponse:\n${response}`,
+                config: state.config.fast  // Use fast model for response analysis
             })
         });
 
