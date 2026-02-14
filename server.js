@@ -438,9 +438,10 @@ app.post('/api/ai-test', async (req, res) => {
         }
 
         if (error.response?.status === 404) {
+            const modelName = req.body.model || 'unknown';
             return res.status(404).json({
                 error: 'Model not found',
-                message: `Model "${model}" not found. Pull it with: ollama pull ${model}`,
+                message: `Model "${modelName}" not found. Pull it with: ollama pull ${modelName}`,
                 details: error.response.data
             });
         }
