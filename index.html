@@ -17,21 +17,44 @@
         <!-- Configuration Panel (Hidden by default) -->
         <section class="config-panel hidden" id="configPanel">
             <h2>⚙️ LLM Configuration</h2>
+            
+            <!-- Mode Selection -->
+            <div class="mode-selector">
+                <label>
+                    <input type="radio" name="llmMode" value="local" id="modeLocal" checked>
+                    <span>🏠 Local (Ollama)</span>
+                </label>
+                <label>
+                    <input type="radio" name="llmMode" value="online" id="modeOnline">
+                    <span>☁️ Online (Groq API)</span>
+                </label>
+            </div>
+
+            <!-- Online Mode: API Key -->
+            <div class="config-section" id="onlineSection" style="display: none;">
+                <div class="api-key-group">
+                    <label for="apiKey">🔑 Groq API Key:</label>
+                    <input type="password" id="apiKey" placeholder="gsk_..." class="config-input" />
+                    <small>Get free API key at <a href="https://console.groq.com" target="_blank">console.groq.com</a> (14,400 requests/day)</small>
+                </div>
+            </div>
+
+            <!-- Model Configuration -->
             <div class="config-grid">
                 <div class="config-group">
                     <h3>🧠 Smart Model (Injection Points & Payloads)</h3>
-                    <div class="input-group">
+                    <div class="input-group" id="smartEndpointGroup">
                         <label for="smartEndpoint">Endpoint URL:</label>
                         <input type="text" id="smartEndpoint" placeholder="http://localhost:11434/v1/chat/completions" class="config-input" />
                     </div>
                     <div class="input-group">
                         <label for="smartModel">Model Name:</label>
-                        <input type="text" id="smartModel" placeholder="deepseek-r1:8b" class="config-input" />
+                        <input type="text" id="smartModel" placeholder="deepseek-r1:7b" class="config-input" />
                     </div>
                 </div>
                 <div class="config-group">
                     <h3>⚡ Fast Model (Response Analysis)</h3>
-                    <div class="input-group">
+                    <div class="input-group" id="fastEndpointGroup">
                         <label for="fastEndpoint">Endpoint URL:</label>
                         <input type="text" id="fastEndpoint" placeholder="http://localhost:11434/v1/chat/completions" class="config-input" />
                     </div>

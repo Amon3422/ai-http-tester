@@ -56,37 +56,65 @@ ai-http-tester/
 
 ## 🚀 Quick Start
 
-### Option 1: Local LLM (Recommended - Ollama)
+### Choose Your Deployment Mode
+
+The tool supports two deployment modes to fit your needs:
+
+#### ☁️ **Online Mode (Fastest Setup - 5 minutes)**
+Best for: Quick start, evaluation, no local setup
+
+1. **Get Free API Key:**
+   - Visit https://console.groq.com
+   - Sign up (no credit card required)
+   - Get 14,400 requests/day for free
+
+2. **Setup Project:**
+   ```bash
+   git clone <repo-url>
+   cd ai-http-tester
+   npm install
+   npm start
+   ```
+
+3. **Configure in Browser:**
+   - Open http://localhost:3000
+   - Click **⚙️ Configure LLM** button
+   - Select **☁️ Online (Groq API)**
+   - Enter your API key
+   - Click **💾 Save Configuration**
+   - Click **🧪 Test Connection** to verify
+
+✅ **You're ready!** Start pasting HTTP requests and testing.
+
+---
+
+#### 🏠 **Local Mode (Privacy & Unlimited Usage)**
+Best for: Production use, privacy-focused testing, unlimited requests
 
 1. **Install Ollama:**
    ```bash
-   # Visit https://ollama.ai to download and install
-   # Or use: curl https://ollama.ai/install.sh | sh
+   # Visit https://ollama.com to download
+   # Or: curl https://ollama.ai/install.sh | sh
    ```
 
 2. **Pull Models:**
    ```bash
    # Smart model (for injection points & payloads)
-   ollama pull deepseek-r1:8b
+   ollama pull deepseek-r1:7b
    
    # Fast model (for response analysis)
    ollama pull deepseek-r1:1.5b
    ```
 
-3. **Start Ollama:**
-   ```bash
-   ollama serve
-   # Runs on http://localhost:11434 by default
-   ```
-
-4. **Verify Setup (Recommended):**
+3. **Verify Setup (Optional but Recommended):**
    ```bash
    node diagnose-ollama.js
-   # This will check if Ollama is running and models are installed
+   # Checks if Ollama is running and models are installed
    ```
 
-5. **Setup Project:**
+4. **Setup Project:**
    ```bash
+   git clone <repo-url>
    cd ai-http-tester
    npm install
    npm start
@@ -94,34 +122,21 @@ ai-http-tester/
 
 5. **Configure in Browser:**
    - Open http://localhost:3000
-   - Click **⚙️ Configuration** button
-   - Set Smart Model:
-     - Endpoint: `http://localhost:11434/v1/chat/completions`
-     - Model: `deepseek-r1:8b`
-   - Set Fast Model:
-     - Endpoint: `http://localhost:11434/v1/chat/completions`
-     - Model: `deepseek-r1:1.5b`
+   - Click **⚙️ Configure LLM** button
+   - Select **🏠 Local (Ollama)**
+   - Keep default settings (localhost:11434)
    - Click **💾 Save Configuration**
    - Click **🧪 Test Connection** to verify
 
-### Option 2: Cloud API (Groq)
+✅ **All set!** Your data never leaves your machine.
 
-1. **Get API Key:**
-   - Visit [console.groq.com](https://console.groq.com)
-   - Sign up and create an API key
+---
 
-2. **Configure in Browser:**
-   - Smart Model Endpoint: `https://api.groq.com/openai/v1/chat/completions`
-   - Smart Model: `llama-3.3-70b-versatile`
-   - Fast Model: Same endpoint and model (or use `llama-3.1-8b-instant`)
-   
-   Note: You'll need to modify the backend to include Authorization header for cloud APIs.
-
-### 3. Start Testing!
-Visit `http://localhost:3000` and start testing!
+📘 **[Full Deployment Comparison & Guide →](DEPLOYMENT.md)**
 
 ## ✨ Features
 
+- ☁️ **Dual Deployment Modes** - Online (Groq API) or Local (Ollama) to fit your needs
 - ⚙️ **Dual-Model Configuration** - Separate smart and fast models for optimal performance
 - 🏠 **Local LLM Support** - Use Ollama, LM Studio, or any OpenAI-compatible endpoint
 - 🎯 **AI-Powered Injection Point Detection** - Automatically finds vulnerable parameters

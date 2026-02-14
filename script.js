@@ -6,6 +6,8 @@ let state = {
     injectionPoints: [],
     lastSentRequest: null,  // Store the actual request sent (with payload applied)
     config: {
+        mode: 'local',  // 'local' or 'online'
+        apiKey: '',     // For online mode (Groq)
         smart: {
             endpoint: 'http://localhost:11434/v1/chat/completions',
             model: 'deepseek-r1:7b'  // 7b is better for 4GB GPUs
@@ -14,6 +16,29 @@ let state = {
             endpoint: 'http://localhost:11434/v1/chat/completions',
             model: 'deepseek-r1:1.5b'
         }
+    }
+};
+
+// Default configurations for quick switching
+const DEFAULT_LOCAL_CONFIG = {
+    smart: {
+        endpoint: 'http://localhost:11434/v1/chat/completions',
+        model: 'deepseek-r1:7b'
+    },
+    fast: {
+        endpoint: 'http://localhost:11434/v1/chat/completions',
+        model: 'deepseek-r1:1.5b'
+    }
+};
+
+const DEFAULT_ONLINE_CONFIG = {
+    smart: {
+        endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+        model: 'llama-3.3-70b-versatile'
+    },
+    fast: {
+        endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+        model: 'llama-3.1-8b-instant'
     }
 };
 
@@ -35,6 +60,10 @@ const clearHistoryBtn = document.getElementById('clearHistoryBtn');
 // Configuration DOM Elements
 const configToggleBtn = document.getElementById('configToggleBtn');
 const configPanel = document.getElementById('configPanel');
+const modeLocalRadio = document.getElementById('modeLocal');
+const modeOnlineRadio = document.getElementById('modeOnline');
+const onlineSection = document.getElementById('onlineSection');
+const apiKeyInput = document.getElementById('apiKey');
 const smartEndpointInput = document.getElementById('smartEndpoint');
 const smartModelInput = document.getElementById('smartModel');
 const fastEndpointInput = document.getElementById('fastEndpoint');
@@ -58,6 +87,8 @@ clearHistoryBtn.addEventListener('click', clearHistory);
 configToggleBtn.addEventListener('click', toggleConfigPanel);
 saveConfigBtn.addEventListener('click', saveConfiguration);
 testConfigBtn.addEventListener('click', testConfiguration);
+modeLocalRadio.addEventListener('change', handleModeChange);
+modeOnlineRadio.addEventListener('change', handleModeChange);
 
 // Initialize
 console.log('AI HTTP Tester initialized');
@@ -77,10 +108,45 @@ function loadConfiguration() {
     }
     
     // Update UI with loaded config
+    const mode = state.config.mode || 'local';
+    if (mode === 'local') {
+        modeLocalRadio.checked = true;
+        onlineSection.style.display = 'none';
+    } else {
+        modeOnlineRadio.checked = true;
+        onlineSection.style.display = 'block';
+    }
+    
+    apiKeyInput.value = state.config.apiKey || '';
     smartEndpointInput.value = state.config.smart.endpoint;
     smartModelInput.value = state.config.smart.model;
     fastEndpointInput.value = state.config.fast.endpoint;
     fastModelInput.value = state.config.fast.model;
+}
+
+function handleModeChange(e) {
+    const mode = e.target.value;
+    
+    // Show/hide online section
+    if (mode === 'online') {
+        onlineSection.style.display = 'block';
+        // Apply online defaults if endpoints are still local
+        if (smartEndpointInput.value.includes('localhost') || smartEndpointInput.value.includes('11434')) {
+            smartEndpointInput.value = DEFAULT_ONLINE_CONFIG.smart.endpoint;
+            smartModelInput.value = DEFAULT_ONLINE_CONFIG.smart.model;
+            fastEndpointInput.value = DEFAULT_ONLINE_CONFIG.fast.endpoint;
+            fastModelInput.value = DEFAULT_ONLINE_CONFIG.fast.model;
+        }
+    } else {
+        onlineSection.style.display = 'none';
+        // Apply local defaults if endpoints are Groq
+        if (smartEndpointInput.value.includes('groq.com')) {
+            smartEndpointInput.value = DEFAULT_LOCAL_CONFIG.smart.endpoint;
+            smartModelInput.value = DEFAULT_LOCAL_CONFIG.smart.model;
+            fastEndpointInput.value = DEFAULT_LOCAL_CONFIG.fast.endpoint;
+            fastModelInput.value = DEFAULT_LOCAL_CONFIG.fast.model;
+        }
+    }
 }
 
 function toggleConfigPanel() {
@@ -88,8 +154,19 @@ function toggleConfigPanel() {
 }
 
 function saveConfiguration() {
+    // Get mode
+    const mode = modeLocalRadio.checked ? 'local' : 'online';
+    
+    // Validate online mode requires API key
+    if (mode === 'online' && !apiKeyInput.value.trim()) {
+        showStatus('⚠️ API Key is required for online mode', 'error');
+        return;
+    }
+    
     // Get values from inputs
     state.config = {
+        mode: mode,
+        apiKey: mode === 'online' ? apiKeyInput.value.trim() : '',
         smart: {
             endpoint: smartEndpointInput.value.trim(),
             model: smartModelInput.value.trim()
@@ -122,6 +199,10 @@ async function testConfiguration() {
     showConfigStatus('Testing connection...', 'testing');
     
     try {
+        // Get mode and API key
+        const mode = modeLocalRadio.checked ? 'local' : 'online';
+        const apiKey = mode === 'online' ? apiKeyInput.value.trim() : '';
+        
         // Test smart model
         const smartResponse = await fetch('/api/ai-test', {
             method: 'POST',
@@ -129,7 +210,8 @@ async function testConfiguration() {
             body: JSON.stringify({
                 endpoint: smartEndpointInput.value.trim(),
                 model: smartModelInput.value.trim(),
-                type: 'smart'
+                type: 'smart',
+                apiKey: apiKey
             })
         });
         
@@ -145,7 +227,8 @@ async function testConfiguration() {
             body: JSON.stringify({
                 endpoint: fastEndpointInput.value.trim(),
                 model: fastModelInput.value.trim(),
-                type: 'fast'
+                type: 'fast',
+                apiKey: apiKey
             })
         });
         

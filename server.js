@@ -47,10 +47,20 @@ require('dotenv').config();
 const app = express();
 const PORT = 3000;
 
-// Default configuration (can be overridden by client)
-const DEFAULT_CONFIG = {
+// Groq API key (optional - for online mode)
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
+// Default configuration for local mode
+const DEFAULT_LOCAL_CONFIG = {
     endpoint: 'http://localhost:11434/v1/chat/completions',
     model: 'deepseek-r1:7b'  // 7b is optimal for RTX 3050 4GB
+};
+
+// Default configuration for online mode (Groq)
+const DEFAULT_ONLINE_CONFIG = {
+    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+    model: 'llama-3.3-70b-versatile',
+    apiKey: GROQ_API_KEY
 };
 
 // Middleware
@@ -332,7 +342,7 @@ function attemptJSONRepair(jsonString, originalError) {
 // AI Test endpoint
 app.post('/api/ai-test', async (req, res) => {
     try {
-        const { endpoint, model, type } = req.body;
+        const { endpoint, model, type, apiKey } = req.body;
 
         if (!endpoint || !model) {
             return res.status(400).json({
@@ -341,29 +351,65 @@ app.post('/api/ai-test', async (req, res) => {
             });
         }
 
+        // Determine if online mode
+        const isOnlineMode = apiKey || endpoint.includes('groq.com');
+        
+        // Use .env fallback for API key if online mode and no key provided
+        const effectiveApiKey = apiKey || (isOnlineMode ? GROQ_API_KEY : null);
+        
+        // Validate API key for online mode
+        if (isOnlineMode && !effectiveApiKey) {
+            return res.status(400).json({
+                error: 'API key required',
+                message: 'Online mode requires a Groq API key. Enter it in the Configuration panel or set GROQ_API_KEY in .env file'
+            });
+        }
+
         console.log(`[AI Test] Testing ${type} model: ${model} at ${endpoint}`);
 
-        // Simple test prompt - Include keep_alive for consistency
+        // Prepare request body
+        const requestBody = {
+            model: model,
+            messages: [
+                {
+                    role: 'user',
+                    content: 'Reply with just "OK" if you can read this.'
+                }
+            ],
+            temperature: 0.1,
+            max_tokens: 10,
+            stream: false
+        };
+        
+        // Add keep_alive only for local mode
+        if (!isOnlineMode) {
+            requestBody.keep_alive = "1m";
+        }
+        
+        // Add response_format for Groq
+        if (isOnlineMode && endpoint.includes('groq.com')) {
+            requestBody.response_format = { type: "json_object" };
+            // Change prompt to expect JSON response
+            requestBody.messages[0].content = 'Reply with JSON: {"status": "OK"}';
+        }
+        
+        // Prepare headers
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+        
+        // Add Authorization header for online mode
+        if (isOnlineMode && effectiveApiKey) {
+            headers['Authorization'] = `Bearer ${effectiveApiKey}`;
+        }
+
+        // Simple test prompt
         const testResponse = await axios.post(
             endpoint,
-            {
-                model: model,
-                messages: [
-                    {
-                        role: 'user',
-                        content: 'Reply with just "OK" if you can read this.'
-                    }
-                ],
-                temperature: 0.1,
-                max_tokens: 10,
-                stream: false,
-                keep_alive: "1m"
-            },
+            requestBody,
             {
                 timeout: 10000,
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+                headers: headers
             }
         );
 
@@ -395,6 +441,14 @@ app.post('/api/ai-test', async (req, res) => {
             return res.status(404).json({
                 error: 'Model not found',
                 message: `Model "${model}" not found. Pull it with: ollama pull ${model}`,
+                details: error.response.data
+            });
+        }
+        
+        if (error.response?.status === 401) {
+            return res.status(401).json({
+                error: 'Authentication failed',
+                message: 'Invalid API key. Please check your Groq API key at https://console.groq.com/keys',
                 details: error.response.data
             });
         }
@@ -516,13 +570,30 @@ app.post('/api/ai-analyze', async (req, res) => {
     try {
         const { prompt, context, config } = req.body;
 
-        // Use provided config or fall back to default
-        const llmConfig = config || DEFAULT_CONFIG;
+        // Determine mode: online (Groq) or local (Ollama)
+        const isOnlineMode = config?.apiKey || (config?.endpoint && config.endpoint.includes('groq.com'));
+        
+        // Use provided config or fall back to appropriate default
+        let llmConfig = config || (isOnlineMode ? DEFAULT_ONLINE_CONFIG : DEFAULT_LOCAL_CONFIG);
+        
+        // If online mode and no API key provided by frontend, use .env fallback
+        if (isOnlineMode && !llmConfig.apiKey && GROQ_API_KEY) {
+            llmConfig = { ...llmConfig, apiKey: GROQ_API_KEY };
+        }
 
+        // Validate configuration
         if (!llmConfig.endpoint || !llmConfig.model) {
             return res.status(400).json({
                 error: 'Configuration missing',
                 message: 'Please configure your LLM endpoint and model in the Configuration panel'
+            });
+        }
+
+        // Check API key for online mode
+        if (isOnlineMode && !llmConfig.apiKey) {
+            return res.status(400).json({
+                error: 'API key required',
+                message: 'Online mode requires a Groq API key. Enter it in the Configuration panel or set GROQ_API_KEY in .env file'
             });
         }
 
@@ -534,7 +605,8 @@ app.post('/api/ai-analyze', async (req, res) => {
         const modelType = isAnalysisRequest ? 'ANALYSIS (Fast)' : 'DISCOVERY (Smart)';
         const temperature = isAnalysisRequest ? 0.1 : 0.6; // Analysis needs precision, Discovery needs creativity
 
-        console.log(`[AI] Mode: ${modelType}`);
+        const mode = isOnlineMode ? '☁️ ONLINE' : '🏠 LOCAL';
+        console.log(`[AI] Mode: ${mode} ${modelType}`);
         console.log(`[AI] Using model: ${llmConfig.model} at ${llmConfig.endpoint}`);
         console.log(`[AI] Temperature: ${temperature}`);
         console.log(`[AI] Prompt: ${prompt.substring(0, 50)}...`);
@@ -558,18 +630,30 @@ app.post('/api/ai-analyze', async (req, res) => {
             ],
             temperature: temperature,
             max_tokens: 4096,
-            stream: false,
-            // CRITICAL for VRAM management on RTX 3050 4GB
-            // Unload model from VRAM after 1 minute of inactivity
-            // This allows switching between 8b and 1.5b models smoothly
-            keep_alive: "1m"
+            stream: false
         };
 
-        // Add response_format if the endpoint supports it (OpenAI-compatible)
-        // Ollama might not support this, so we'll handle JSON parsing ourselves
-        if (llmConfig.forceJson !== false) {
-            // Most OpenAI-compatible APIs support this
-            // requestBody.response_format = { type: 'json_object' };
+        // Local mode specific: Add keep_alive for VRAM management
+        if (!isOnlineMode) {
+            // CRITICAL for VRAM management on RTX 3050 4GB
+            // Unload model from VRAM after 1 minute of inactivity
+            // This allows switching between models smoothly
+            requestBody.keep_alive = "1m";
+        }
+
+        // Online mode specific: Force JSON output if supported
+        if (isOnlineMode && llmConfig.endpoint.includes('groq.com')) {
+            requestBody.response_format = { type: 'json_object' };
+        }
+
+        // Prepare headers
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+
+        // Add Authorization header for online mode
+        if (isOnlineMode && llmConfig.apiKey) {
+            headers['Authorization'] = `Bearer ${llmConfig.apiKey}`;
         }
 
         // Call LLM API (OpenAI-compatible format)
@@ -577,10 +661,8 @@ app.post('/api/ai-analyze', async (req, res) => {
             llmConfig.endpoint,
             requestBody,
             {
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                timeout: 60000 // 60 second timeout for local models
+                headers: headers,
+                timeout: 60000 // 60 second timeout
             }
         );
 
