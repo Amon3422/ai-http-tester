@@ -272,7 +272,7 @@ async function handleAskAI() {
     try {
         const request = requestEditor.value.trim();
         
-        // Call AI API with configuration
+        // Call AI API with configuration including API key
         const response = await fetch('/api/ai-analyze', {
             method: 'POST',
             headers: {
@@ -281,7 +281,10 @@ async function handleAskAI() {
             body: JSON.stringify({
                 prompt: userMessage,
                 context: request || null,
-                config: state.config.smart  // Use smart model for injection points & payloads
+                config: {
+                    ...state.config.smart,  // Use smart model for injection points & payloads
+                    apiKey: state.config.apiKey  // Include API key from config
+                }
             })
         });
 
@@ -453,7 +456,10 @@ async function handleAnalyzeResponse() {
             body: JSON.stringify({
                 prompt: 'Analyze this HTTP response for security vulnerabilities. Was the attack successful?',
                 context: `Request:\n${state.lastSentRequest}\n\nResponse:\n${response}`,
-                config: state.config.fast  // Use fast model for response analysis
+                config: {
+                    ...state.config.fast,  // Use fast model for response analysis
+                    apiKey: state.config.apiKey  // Include API key from config
+                }
             })
         });
 
@@ -1176,3 +1182,5 @@ function clearHistory() {
         alert('History cleared!');
     }
 }
+
+console.log(apiKeyInput)
